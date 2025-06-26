@@ -3,6 +3,11 @@ A Model Context Protocol server that provides access to your iTerm session.
 
 ![Main Image](.github/images/demo.gif)
 
+> **Fork Notice**: This is @ianks's fork with enhanced command execution features. Install with:
+> ```bash
+> npx github:ianks/iterm-mcp#main iterm-mcp
+> ```
+
 ### Features
 
 **Efficient Token Use:** iterm-mcp gives the model the ability to inspect only the output that the model is interested in. The model typically only wants to see the last few lines of output even for long running commands. 
@@ -12,6 +17,15 @@ A Model Context Protocol server that provides access to your iTerm session.
 **Full Terminal Control and REPL support:** The model can start and interact with REPL's as well as send control characters like ctrl-c, ctrl-z, etc.
 
 **Easy on the Dependencies:** iterm-mcp is built with minimal dependencies and is runnable via npx. It's designed to be easy to add to Claude Desktop and other MCP clients. It should just work.
+
+### Fork Enhancements
+
+This fork adds several improvements to command execution:
+
+- **Buffered Command Execution**: Intelligent buffering system that tracks unread output between commands
+- **Synchronous Command Execution**: New `execute_command` tool that combines write and read operations for better performance
+- **Streaming Output Support**: Async command execution with `execute_command_async` and `read_streaming_output` for long-running commands
+- **Better Output Management**: Prevents output loss between rapid command executions by detecting and preserving unread content
 
 
 ## Safety Considerations
@@ -47,7 +61,7 @@ On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
       "command": "npx",
       "args": [
         "-y",
-        "iterm-mcp"
+        "github:ianks/iterm-mcp#main"
       ]
     }
   }
