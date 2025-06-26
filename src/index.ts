@@ -6,9 +6,11 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import CommandExecutor from "./CommandExecutor.js";
-import TtyOutputReader from "./TtyOutputReader.js";
+import BufferedCommandExecutor from "./BufferedCommandExecutor.js";
 import SendControlCharacter from "./SendControlCharacter.js";
+
+// Create a shared instance of BufferedCommandExecutor
+const bufferedExecutor = new BufferedCommandExecutor();
 
 const server = new Server(
   {
@@ -26,31 +28,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
-        name: "write_to_terminal",
-        description: "Writes text to the active iTerm terminal - often used to run a command in the terminal",
+        name: "execute_command",
+        description: "Executes a command in the iTerm terminal and returns the output immediately. This combines write and read operations for better performance.",
         inputSchema: {
           type: "object",
           properties: {
             command: {
               type: "string",
-              description: "The command to run or text to write to the terminal"
+              description: "The command to execute in the terminal"
             },
+            returnFullOutput: {
+              type: "boolean",
+              description: "If true, returns the full terminal buffer. If false (default), returns only the command output.",
+              default: false
+            }
           },
           required: ["command"]
-        }
-      },
-      {
-        name: "read_terminal_output",
-        description: "Reads the output from the active iTerm terminal",
-        inputSchema: {
-          type: "object",
-          properties: {
-            linesOfOutput: {
-              type: "integer",
-              description: "The number of lines of output to read."
-            },
-          },
-          required: ["linesOfOutput"]
         }
       },
       {
@@ -66,6 +59,28 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ["letter"]
         }
+      },
+      {
+        name: "execute_command_async",
+        description: "Starts executing a command without waiting for completion. Use read_streaming_output to get the output.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            command: {
+              type: "string",
+              description: "The command to execute asynchronously"
+            }
+          },
+          required: ["command"]
+        }
+      },
+      {
+        name: "read_streaming_output",
+        description: "Reads any new output from an async command execution. Returns the new output and whether the command is complete.",
+        inputSchema: {
+          type: "object",
+          properties: {}
+        }
       }
     ]
   };
@@ -73,35 +88,31 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   switch (request.params.name) {
-    case "write_to_terminal": {
-      let executor = new CommandExecutor();
+    case "execute_command": {
       const command = String(request.params.arguments?.command);
-      const beforeCommandBuffer = await TtyOutputReader.retrieveBuffer();
-      const beforeCommandBufferLines = beforeCommandBuffer.split("\n").length;
+      const returnFullOutput = Boolean(request.params.arguments?.returnFullOutput);
       
-      await executor.executeCommand(command);
-      
-      const afterCommandBuffer = await TtyOutputReader.retrieveBuffer();
-      const afterCommandBufferLines = afterCommandBuffer.split("\n").length;
-      const outputLines = afterCommandBufferLines - beforeCommandBufferLines
-
-      return {
-        content: [{
-          type: "text",
-          text: `${outputLines} lines were output after sending the command to the terminal. Read the last ${outputLines} lines of terminal contents to orient yourself. Never assume that the command was executed or that it was successful.`
-        }]
-      };
-    }
-    case "read_terminal_output": {
-      const linesOfOutput = Number(request.params.arguments?.linesOfOutput) || 25
-      const output = await TtyOutputReader.call(linesOfOutput)
-
-      return {
-        content: [{
-          type: "text",
-          text: output
-        }]
-      };
+      try {
+        const result = await bufferedExecutor.executeCommand(command);
+        
+        return {
+          content: [{
+            type: "text",
+            text: returnFullOutput ? (result.fullBuffer || result.output) : result.output
+          }]
+        };
+      } catch (error: unknown) {
+        // If there's unread output, return it with the error message
+        if (error instanceof Error && error.message.includes("Unread output detected")) {
+          return {
+            content: [{
+              type: "text",
+              text: error.message
+            }]
+          };
+        }
+        throw error;
+      }
     }
     case "send_control_character": {
       const ttyControl = new SendControlCharacter();
@@ -114,6 +125,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           text: `Sent control character: Control-${letter.toUpperCase()}`
         }]
       };
+    }
+    case "execute_command_async": {
+      const command = String(request.params.arguments?.command);
+      
+      try {
+        await bufferedExecutor.executeCommandAsync(command);
+        return {
+          content: [{
+            type: "text",
+            text: "Command execution started. Use read_streaming_output to get the output."
+          }]
+        };
+      } catch (error: unknown) {
+        throw new Error(`Failed to start async command: ${(error as Error).message}`);
+      }
+    }
+    case "read_streaming_output": {
+      try {
+        const result = await bufferedExecutor.readNewOutput();
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              output: result.output,
+              isComplete: result.isComplete
+            }, null, 2)
+          }]
+        };
+      } catch (error: unknown) {
+        throw new Error(`Failed to read streaming output: ${(error as Error).message}`);
+      }
     }
     default:
       throw new Error("Unknown tool");

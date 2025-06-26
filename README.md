@@ -22,8 +22,9 @@ A Model Context Protocol server that provides access to your iTerm session.
 * For multi-step tasks, you may need to interrupt the model if it goes off track. Start with smaller, focused tasks until you're familiar with how the model behaves. 
 
 ### Tools
-- `write_to_terminal` - Writes to the active iTerm terminal, often used to run a command. Returns the number of lines of output produced by the command.
-- `read_terminal_output` - Reads the requested number of lines from the active iTerm terminal.
+- `execute_command` - **NEW: Recommended for most use cases.** Executes a command and returns the output immediately, combining write and read operations for better performance.
+- `execute_command_async` - Starts executing a command without waiting for completion. Useful for long-running commands.
+- `read_streaming_output` - Reads new output from an async command execution. Returns the output and completion status.
 - `send_control_character` - Sends a control character to the active iTerm terminal.
 
 ### Requirements

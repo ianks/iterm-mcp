@@ -60,8 +60,24 @@ class CommandExecutor {
         await sleep(100);
       }
 
-      // Give a small delay for output to settle
-      await sleep(200);
+      // Additional synchronization to ensure all output is captured
+      // Wait for buffer to stabilize (no changes for a period of time)
+      let previousBuffer = await TtyOutputReader.retrieveBuffer();
+      let stableCount = 0;
+      const requiredStableChecks = 3;
+      const checkInterval = 100;
+      
+      while (stableCount < requiredStableChecks) {
+        await sleep(checkInterval);
+        const currentBuffer = await TtyOutputReader.retrieveBuffer();
+        
+        if (currentBuffer === previousBuffer) {
+          stableCount++;
+        } else {
+          stableCount = 0;
+          previousBuffer = currentBuffer;
+        }
+      }
       
       // Retrieve the terminal output after command execution
       const afterCommandBuffer = await TtyOutputReader.retrieveBuffer()
@@ -87,7 +103,9 @@ class CommandExecutor {
 
           if (activeProcess.metrics.totalCPUPercent < 1) {
             belowThresholdTime += 350;
-            if (belowThresholdTime >= 1000) return true;
+            // Increase the threshold to ensure we're truly waiting for input
+            // This helps prevent returning too early when output is still being generated
+            if (belowThresholdTime >= 1500) return true;
           } else {
             belowThresholdTime = 0;
           }
